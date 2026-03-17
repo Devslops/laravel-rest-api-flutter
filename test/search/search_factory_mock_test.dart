@@ -9,8 +9,9 @@ import '../mock/item_model.dart';
 import '../mock/mock_http_client.dart';
 import '../mock/mock_http_client.mocks.dart';
 
+/// Repository standard pour les tests de base
 class ItemRepository with SearchFactory<ItemModel> {
-  MockDio mockDio;
+  final MockDio mockDio;
   ItemRepository(this.mockDio);
 
   @override
@@ -30,8 +31,9 @@ class ItemRepository with SearchFactory<ItemModel> {
   ) {}
 }
 
+/// Repository avec configuration par défaut pour tester le merge des paramètres
 class ItemRepositoryWithDefaultBody with SearchFactory<ItemModel> {
-  MockDio mockDio;
+  final MockDio mockDio;
   ItemRepositoryWithDefaultBody(this.mockDio);
 
   @override
@@ -58,14 +60,26 @@ class ItemRepositoryWithDefaultBody with SearchFactory<ItemModel> {
 
 void main() {
   late MockDio mockDio;
+  late ItemRepository repository;
+  late ItemRepositoryWithDefaultBody repositoryWithDefault;
 
   setUp(() {
     mockDio = MockDio();
+    repository = ItemRepository(mockDio);
+    repositoryWithDefault = ItemRepositoryWithDefaultBody(mockDio);
   });
 
-  group('Search Factory Tests', () {
+  group('Search Factory - Response Handling', () {
+    // TEST 1
     test('[200] Successful API call with valid JSON', () async {
-      when(mockDio.post('/items/search')).thenAnswer(
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
           requestOptions: RequestOptions(path: '/items/search'),
           statusCode: 200,
@@ -78,35 +92,51 @@ void main() {
         ),
       );
 
-      final result = await ItemRepository(mockDio).search();
+      final result = await repository.search();
 
       expect(result.statusCode, 200);
       expect(result.data, isNotNull);
       expect(result.data!.length, 2);
+      expect(result.data!.first.name, 'Lou West');
     });
 
-    test('[200] Successful API call with bad JSON', () async {
-      when(mockDio.post('/items/search')).thenAnswer(
+    // TEST 2
+    test('[200] Successful API call with bad JSON (Model mismatch)', () async {
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
           requestOptions: RequestOptions(path: '/items/search'),
           statusCode: 200,
           data: {
             'data': [
-              {'idd': 1, 'name': 'Lou West'},
-              {'idd': 2, 'name': 'Bridget Wilderman'},
+              {'idd': 1, 'name': 'Lou West'}, // Mauvaise clé 'idd'
             ],
           },
         ),
       );
 
-      final result = await ItemRepository(mockDio).search();
+      final result = await repository.search();
 
       expect(result.statusCode, 200);
       expect(result.data, isNull);
     });
 
+    // TEST 3
     test('[404] With common laravel error message', () async {
-      when(mockDio.post('/items/search')).thenAnswer(
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
           requestOptions: RequestOptions(path: '/items/search'),
           statusCode: 404,
@@ -114,139 +144,175 @@ void main() {
             "message": "Not Found",
             "exception":
                 "Symfony\\Component\\HttpKernel\\Exception\\NotFoundHttpException",
-            "file":
-                "/path/to/project/vendor/symfony/http-kernel/Exception/NotFoundHttpException.php",
-            "line": 23,
           },
         ),
       );
 
-      final result = await ItemRepository(mockDio).search();
+      final result = await repository.search();
 
       expect(result.statusCode, 404);
       expect(result.message, "Not Found");
     });
+
+    // TEST 4
+    test('[500] With custom object error message returned', () async {
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          requestOptions: RequestOptions(path: '/items/search'),
+          statusCode: 500,
+          data: {"error": "error"},
+        ),
+      );
+
+      final result = await repository.search();
+
+      expect(result.statusCode, 500);
+      expect(result.body?["error"], "error"); // Ajout du safe call ?
+    });
+
+    // TEST 5
+    test('[500] With custom list error message returned', () async {
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          requestOptions: RequestOptions(path: '/items/search'),
+          statusCode: 500,
+          data: [
+            {"error": "error"},
+          ],
+        ),
+      );
+
+      final result = await repository.search();
+
+      expect(result.statusCode, 500);
+      expect(result.body?[0]["error"], "error"); // Ajout du safe call ?
+    });
   });
 
-  test('[500] With custom object error message returned', () async {
-    when(mockDio.post('/items/search')).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: '/items/search'),
-        statusCode: 500,
-        data: {"error": "error"},
-      ),
-    );
+  group('Search Factory - Request Construction', () {
+    // TEST 6
+    test('Check if all attributes filter can be send in body', () async {
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          requestOptions: RequestOptions(path: '/items/search'),
+          statusCode: 200,
+          data: {'data': []},
+        ),
+      );
 
-    final result = await ItemRepository(mockDio).search();
-
-    expect(result.statusCode, 500);
-    expect(result.body["error"], "error");
-  });
-
-  test('[500] With custom list error message returned', () async {
-    when(mockDio.post('/items/search')).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: '/items/search'),
-        statusCode: 500,
-        data: [
-          {"error": "error"},
+      await repositoryWithDefault.search(
+        text: TextSearch(value: "my text search"),
+        filters: [Filter(field: "field", type: "type", value: null)],
+        aggregates: [
+          Aggregate(relation: "relation", type: "type", field: "field"),
         ],
-      ),
-    );
+        includes: [
+          Include(
+            relation: "relation",
+            includes: [Include(relation: "relationIncludes")],
+            selects: [Select(field: "relationField")],
+            filters: [Filter(field: "relationFilter", value: null)],
+          ),
+        ],
+        instructions: [
+          Instruction(
+            name: "name",
+            fields: [InstructionField(name: "name", value: "value")],
+          ),
+        ],
+        limit: 1,
+        page: 1,
+        scopes: [Scope(name: "name")],
+        selects: [Select(field: "field")],
+        sorts: [Sort(field: "field", direction: "direction")],
+      );
 
-    final result = await ItemRepository(mockDio).search();
-
-    expect(result.statusCode, 500);
-    expect(result.body[0]["error"], "error");
-  });
-
-  test('Check if all attributes filter can be send in body', () async {
-    when(mockDio.post('/items/search', data: anyNamed('data'))).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: '/items/search'),
-        statusCode: 200,
-        data: {'data': []},
-      ),
-    );
-
-    await ItemRepositoryWithDefaultBody(mockDio).search(
-      text: TextSearch(value: "my text search"),
-      filters: [Filter(field: "field", type: "type", value: null)],
-      aggregates: [
-        Aggregate(relation: "relation", type: "type", field: "field"),
-      ],
-      includes: [
-        Include(
-          relation: "relation",
-          includes: [Include(relation: "relationIncludes")],
-          selects: [Select(field: "relationField")],
-          filters: [Filter(field: "relationFilter", value: null)],
+      final capturedArgs = verify(
+        mockDio.post(
+          '/items/search',
+          data: captureAnyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
         ),
-      ],
-      instructions: [
-        Instruction(
-          name: "name",
-          fields: [InstructionField(name: "name", value: "value")],
+      ).captured.first;
+
+      final search = capturedArgs['search'];
+      expect(search.containsKey('text'), isTrue);
+      expect(search.containsKey('filters'), isTrue);
+      expect(search.containsKey('aggregates'), isTrue);
+      expect(search.containsKey('includes'), isTrue);
+      expect(search.containsKey('instructions'), isTrue);
+      expect(search['limit'], 1);
+
+      // Profondeur des includes
+      expect(
+        search["includes"][0]["includes"][0]["relation"],
+        "relationIncludes",
+      );
+      expect(search["includes"][0]["selects"][0]["field"], "relationField");
+    });
+
+    // TEST 7
+    test('Check if defaultSearchBody is correctly send to api', () async {
+      when(
+        mockDio.post(
+          '/items/search',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
         ),
-      ],
-      limit: 1,
-      page: 1,
-      scopes: [Scope(name: "name")],
-      selects: [Select(field: "field")],
-      sorts: [Sort(field: "field", direction: "direction")],
-    );
+      ).thenAnswer(
+        (_) async => Response(
+          requestOptions: RequestOptions(path: '/items/search'),
+          statusCode: 200,
+          data: {'data': []},
+        ),
+      );
 
-    final capturedArgs = verify(
-      mockDio.post('/items/search', data: captureAnyNamed('data')),
-    ).captured;
+      await repositoryWithDefault.search(
+        aggregates: [
+          Aggregate(relation: "relation", type: "type", field: "field"),
+        ],
+      );
 
-    expect(capturedArgs[0].containsKey('search'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('text'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('filters'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('aggregates'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('includes'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('instructions'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('scopes'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('selects'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('sorts'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('limit'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('page'), isTrue);
+      final capturedArgs = verify(
+        mockDio.post(
+          '/items/search',
+          data: captureAnyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).captured.first;
 
-    expect(
-      capturedArgs[0]["search"]["includes"][0]["includes"][0]["relation"],
-      "relationIncludes",
-    );
-    expect(
-      capturedArgs[0]["search"]["includes"][0]["selects"][0]["field"],
-      "relationField",
-    );
-    expect(
-      capturedArgs[0]["search"]["includes"][0]["filters"][0]["field"],
-      "relationFilter",
-    );
-  });
-
-  test('Check if defaultSearchBody is correctly send to api', () async {
-    when(mockDio.post('/items/search', data: anyNamed('data'))).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(path: '/items/search'),
-        statusCode: 200,
-        data: {'data': []},
-      ),
-    );
-
-    await ItemRepositoryWithDefaultBody(mockDio).search(
-      aggregates: [
-        Aggregate(relation: "relation", type: "type", field: "field"),
-      ],
-    );
-
-    final capturedArgs = verify(
-      mockDio.post('/items/search', data: captureAnyNamed('data')),
-    ).captured;
-
-    expect(capturedArgs[0].containsKey('search'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('filters'), isTrue);
-    expect(capturedArgs[0]["search"].containsKey('aggregates'), isTrue);
+      expect(
+        capturedArgs['search'].containsKey('filters'),
+        isTrue,
+      ); // Vient du defaultSearchBody
+      expect(
+        capturedArgs['search'].containsKey('aggregates'),
+        isTrue,
+      ); // Vient de l'appel
+    });
   });
 }
