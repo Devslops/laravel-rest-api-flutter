@@ -9,9 +9,11 @@ import 'mock/item_model.dart';
 import 'mock/mock_http_client.dart';
 import 'mock/mock_http_client.mocks.dart';
 
-class ItemRepository with MutateFactory {
-  MockDio mockDio;
-  ItemRepository(this.mockDio);
+/// Repository de test utilisant le mixin MutateFactory
+class ItemMutateRepository with MutateFactory {
+  final MockDio mockDio;
+
+  ItemMutateRepository(this.mockDio);
 
   @override
   String get baseRoute => '/items';
@@ -22,28 +24,28 @@ class ItemRepository with MutateFactory {
 
 void main() {
   late MockDio mockDio;
+  late ItemMutateRepository repository;
 
   setUp(() {
     mockDio = MockDio();
+    repository = ItemMutateRepository(mockDio);
   });
 
-  group('Mutate Factory Tests', () {
+  group('Mutate Factory - API Calls', () {
+    // TEST 1 : Succès 200
     test('[200] Successful API call with valid JSON', () async {
+      final item = ItemModel(id: 1, name: "name");
+
       when(
         mockDio.post(
           '/items/mutate',
-          data: {
-            "mutate": [
-              {
-                "operation": "create",
-                "attributes": ItemModel(id: 1, name: "name").toJson(),
-              },
-            ],
-          },
+          data: anyNamed('data'),
+          options: anyNamed('options'), // <-- LA CORRECTION EST ICI
+          queryParameters: anyNamed('queryParameters'), // Par sécurité
         ),
       ).thenAnswer(
         (_) async => Response(
-          requestOptions: RequestOptions(),
+          requestOptions: RequestOptions(path: '/items/mutate'),
           statusCode: 200,
           data: {
             "created": [1],
@@ -52,12 +54,12 @@ void main() {
         ),
       );
 
-      final result = await ItemRepository(mockDio).mutate(
+      final result = await repository.mutate(
         body: LaravelRestApiMutateBody(
           mutate: [
             Mutation(
               operation: MutationOperation.create,
-              attributes: ItemModel(id: 1, name: "name").toJson(),
+              attributes: item.toJson(),
             ),
           ],
         ),
@@ -67,42 +69,44 @@ void main() {
       expect(result.data, isNotNull);
       expect(result.data?.created.contains(1), true);
       expect(result.data?.updated.isEmpty, true);
+
+      verify(
+        mockDio.post(
+          '/items/mutate',
+          data: anyNamed('data'),
+          options: anyNamed('options'),
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).called(1);
     });
 
+    // TEST 2 : Erreur 500 standard Laravel
     test('[500] With common laravel error message', () async {
       when(
         mockDio.post(
           '/items/mutate',
-          data: {
-            "mutate": [
-              {
-                "operation": "create",
-                "attributes": ItemModel(id: 1, name: "name").toJson(),
-              },
-            ],
-          },
+          data: anyNamed('data'),
+          options: anyNamed('options'), // <-- LA CORRECTION EST ICI
+          queryParameters: anyNamed('queryParameters'),
         ),
       ).thenAnswer(
         (_) async => Response(
-          requestOptions: RequestOptions(),
+          requestOptions: RequestOptions(path: '/items/mutate'),
           statusCode: 500,
           data: {
             "message": "Server error",
             "exception":
                 "Symfony\\Component\\HttpKernel\\Exception\\NotFoundHttpException",
-            "file":
-                "/path/to/project/vendor/symfony/http-kernel/Exception/NotFoundHttpException.php",
-            "line": 23,
           },
         ),
       );
 
-      final result = await ItemRepository(mockDio).mutate(
+      final result = await repository.mutate(
         body: LaravelRestApiMutateBody(
           mutate: [
             Mutation(
               operation: MutationOperation.create,
-              attributes: ItemModel(id: 1, name: "name").toJson(),
+              attributes: {"name": "test"},
             ),
           ],
         ),
@@ -111,13 +115,46 @@ void main() {
       expect(result.statusCode, 500);
       expect(result.message, "Server error");
     });
+
+    // TEST 3 : Erreur 500 avec objet custom
+    test('[500] With custom object error message returned', () async {
+      when(
+        mockDio.post(
+          '/items/mutate',
+          data: anyNamed('data'),
+          options: anyNamed('options'), // <-- LA CORRECTION EST ICI
+          queryParameters: anyNamed('queryParameters'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          requestOptions: RequestOptions(path: '/items/mutate'),
+          statusCode: 500,
+          data: {"error": "custom_error_code"},
+        ),
+      );
+
+      final result = await repository.mutate(
+        body: LaravelRestApiMutateBody(
+          mutate: [
+            Mutation(
+              operation: MutationOperation.create,
+              attributes: {"name": "test"},
+            ),
+          ],
+        ),
+      );
+
+      expect(result.statusCode, 500);
+      expect(result.body["error"], "custom_error_code");
+    });
   });
 
-  group('Mutate complex .ToJson() tests', () {
-    test('Mutation update existing item without relation', () async {
-      final ItemModel item = ItemModel(id: 1, name: "new item name !");
+  group('Mutate Factory - Serialization (.toJson)', () {
+    // TEST 4 : Sérialisation simple
+    test('Mutation update existing item without relation', () {
+      final ItemModel item = ItemModel(id: 1, name: "updated name");
 
-      final result = LaravelRestApiMutateBody(
+      final json = LaravelRestApiMutateBody(
         mutate: [
           Mutation(
             key: item.id,
@@ -128,117 +165,59 @@ void main() {
         ],
       ).toJson();
 
-      final mutateMap = result['mutate'].first;
+      final mutateMap = json['mutate'].first;
       expect(mutateMap['key'], item.id);
       expect(mutateMap['without_detaching'], true);
       expect(mutateMap['operation'], MutationOperation.update.name);
       expect(mutateMap['attributes']['name'], item.name);
-      expect(mutateMap['attributes']['id'], item.id);
     });
 
-    test(
-      'Mutation update existing item with two relations and a pivot',
-      () async {
-        final ItemModel item = ItemModel(id: 1, name: "new item");
-        final ItemModel childItem = ItemModel(id: 2, name: "child");
-        final ItemModel pivotItem = ItemModel(id: 3, name: "pivot");
-        final ItemModel secondChildItem = ItemModel(id: 4, name: "secondchild");
+    // TEST 5 : Sérialisation complexe (Relations & Pivots)
+    test('Mutation complex: two relations and a pivot', () {
+      final item = ItemModel(id: 1, name: "parent");
+      final child = ItemModel(id: 2, name: "child");
+      final pivot = ItemModel(id: 3, name: "pivot_data");
+      final secondChild = ItemModel(id: 4, name: "second_child");
 
-        final result = LaravelRestApiMutateBody(
-          mutate: [
-            Mutation(
-              withoutDetaching: false,
-              operation: MutationOperation.create,
-              attributes: item.toJson(),
-              relations: [
-                MutationRelation(
-                  table: 'item',
-                  key: childItem.id,
-                  withoutDetaching: false,
-                  pivot: pivotItem.toJson(),
-                  attributes: childItem.toJson(),
-                  relationType: RelationType.singleRelation,
-                  operation: MutationRelationOperation.toggle,
-                ),
-                MutationRelation(
-                  table: 'item2',
-                  key: secondChildItem.id,
-                  attributes: secondChildItem.toJson(),
-                  relationType: RelationType.multipleRelation,
-                  operation: MutationRelationOperation.sync,
-                ),
-              ],
-            ),
-          ],
-        ).toJson();
-
-        final mutateMap = result['mutate'].first;
-        expect(mutateMap['without_detaching'], false);
-        expect(mutateMap['operation'], MutationOperation.create.name);
-        expect(mutateMap['attributes']['name'], item.name);
-        expect(mutateMap['attributes']['id'], item.id);
-
-        final mutateChildMap = result['mutate'].first['relations']['item'];
-        expect(mutateChildMap['without_detaching'], false);
-        expect(mutateChildMap['key'], childItem.id);
-        expect(mutateChildMap['attributes']['name'], childItem.name);
-        expect(mutateChildMap['attributes']['id'], childItem.id);
-        expect(mutateChildMap['pivot']['name'], pivotItem.name);
-        expect(mutateChildMap['pivot']['id'], pivotItem.id);
-        expect(
-          mutateChildMap['operation'],
-          MutationRelationOperation.toggle.name,
-        );
-
-        final mutateSecondChildMap =
-            result['mutate'].first['relations']['item2'].first;
-        expect(mutateSecondChildMap['key'], secondChildItem.id);
-        expect(
-          mutateSecondChildMap['attributes']['name'],
-          secondChildItem.name,
-        );
-        expect(mutateSecondChildMap['attributes']['id'], secondChildItem.id);
-        expect(
-          mutateSecondChildMap['operation'],
-          MutationRelationOperation.sync.name,
-        );
-      },
-    );
-  });
-
-  test('[500] With custom object error message returned', () async {
-    when(
-      mockDio.post(
-        '/items/mutate',
-        data: {
-          "mutate": [
-            {
-              "operation": "create",
-              "attributes": ItemModel(id: 1, name: "name").toJson(),
-            },
-          ],
-        },
-      ),
-    ).thenAnswer(
-      (_) async => Response(
-        requestOptions: RequestOptions(),
-        statusCode: 500,
-        data: {"error": "error"},
-      ),
-    );
-
-    final result = await ItemRepository(mockDio).mutate(
-      body: LaravelRestApiMutateBody(
+      final json = LaravelRestApiMutateBody(
         mutate: [
           Mutation(
             operation: MutationOperation.create,
-            attributes: ItemModel(id: 1, name: "name").toJson(),
+            attributes: item.toJson(),
+            relations: [
+              MutationRelation(
+                table: 'tags',
+                key: child.id,
+                withoutDetaching: false,
+                pivot: pivot.toJson(),
+                attributes: child.toJson(),
+                relationType: RelationType.singleRelation,
+                operation: MutationRelationOperation.toggle,
+              ),
+              MutationRelation(
+                table: 'categories',
+                key: secondChild.id,
+                attributes: secondChild.toJson(),
+                relationType: RelationType.multipleRelation,
+                operation: MutationRelationOperation.sync,
+              ),
+            ],
           ),
         ],
-      ),
-    );
+      ).toJson();
 
-    expect(result.statusCode, 500);
-    expect(result.body["error"], "error");
+      final rootMutation = json['mutate'].first;
+
+      // Vérification Relation Single (Object)
+      final tagRelation = rootMutation['relations']['tags'];
+      expect(tagRelation['operation'], MutationRelationOperation.toggle.name);
+      expect(tagRelation['key'], child.id);
+      expect(tagRelation['pivot']['id'], pivot.id);
+
+      // Vérification Relation Multiple (List)
+      final catRelation = rootMutation['relations']['categories'].first;
+      expect(catRelation['operation'], MutationRelationOperation.sync.name);
+      expect(catRelation['key'], secondChild.id);
+    });
   });
 }

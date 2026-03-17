@@ -10,7 +10,7 @@ class LaravelRestApiActionsBody {
 
 class Action {
   final String name;
-  final String value;
+  final dynamic value;
 
   Action({required this.name, required this.value});
 

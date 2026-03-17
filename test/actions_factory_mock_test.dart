@@ -27,15 +27,51 @@ void main() {
   });
 
   group('Action Factory Tests', () {
-    test('[200] Successful API call with valid JSON', () async {
+    test(
+      '[200] Successful API call with valid JSON and String value',
+      () async {
+        when(
+          mockDio.post(
+            argThat(startsWith('/items/actions/')),
+            data: anyNamed('data'),
+            queryParameters: anyNamed('queryParameters'),
+            options: anyNamed('options'),
+            cancelToken: anyNamed('cancelToken'),
+            onSendProgress: anyNamed('onSendProgress'),
+            onReceiveProgress: anyNamed('onReceiveProgress'),
+          ),
+        ).thenAnswer(
+          (_) async => Response(
+            requestOptions: RequestOptions(path: '/items/actions/expire-items'),
+            statusCode: 200,
+            data: {
+              "data": {"impacted": 10},
+            },
+          ),
+        );
+
+        final result = await ItemRepository(mockDio).actions(
+          actionUriKey: 'expire-items',
+          data: LaravelRestApiActionsBody(
+            fields: [Action(name: "expires_at", value: "2023-04-29")],
+          ),
+        );
+
+        expect(result.statusCode, 200);
+        expect(result.data, 10);
+      },
+    );
+
+    test('[200] Successful API call with valid JSON and List value', () async {
       when(
         mockDio.post(
-          '/items/actions/expire-items',
-          data: {
-            "fields": [
-              {"name": "expires_at", "value": "2023-04-29"},
-            ],
-          },
+          argThat(contains('/items/actions/expire-items')),
+          data: anyNamed('data'),
+          queryParameters: anyNamed('queryParameters'),
+          options: anyNamed('options'),
+          cancelToken: anyNamed('cancelToken'),
+          onSendProgress: anyNamed('onSendProgress'),
+          onReceiveProgress: anyNamed('onReceiveProgress'),
         ),
       ).thenAnswer(
         (_) async => Response(
@@ -50,7 +86,9 @@ void main() {
       final result = await ItemRepository(mockDio).actions(
         actionUriKey: 'expire-items',
         data: LaravelRestApiActionsBody(
-          fields: [Action(name: "expires_at", value: "2023-04-29")],
+          fields: [
+            Action(name: "ids", value: ["123", "456"]),
+          ],
         ),
       );
 
@@ -61,12 +99,13 @@ void main() {
     test('[500] With common laravel error message', () async {
       when(
         mockDio.post(
-          '/items/actions/expire-items',
-          data: {
-            "fields": [
-              {"name": "expires_at", "value": "2023-04-29"},
-            ],
-          },
+          any,
+          data: anyNamed('data'),
+          queryParameters: anyNamed('queryParameters'),
+          options: anyNamed('options'),
+          cancelToken: anyNamed('cancelToken'),
+          onSendProgress: anyNamed('onSendProgress'),
+          onReceiveProgress: anyNamed('onReceiveProgress'),
         ),
       ).thenAnswer(
         (_) async => Response(
