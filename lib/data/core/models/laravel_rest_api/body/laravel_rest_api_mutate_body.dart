@@ -1,10 +1,12 @@
 class LaravelRestApiMutateBody {
   final List<Mutation> mutate;
+  final Map<String, dynamic>? body;
 
-  LaravelRestApiMutateBody({required this.mutate});
+  LaravelRestApiMutateBody({required this.mutate, this.body});
 
   Map<String, dynamic> toJson() => {
     "mutate": mutate.map((m) => m.toJson()).toList(),
+    if (body != null) ...body!,
   };
 }
 
