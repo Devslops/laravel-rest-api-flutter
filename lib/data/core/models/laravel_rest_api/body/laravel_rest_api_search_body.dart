@@ -194,7 +194,7 @@ class Aggregate {
     return {
       'relation': relation,
       'type': type,
-      'field': field,
+      if (field != null) 'field': field,
       if (alias != null) 'alias': alias,
       if (filters != null) 'filters': filters!.map((e) => e.toJson()).toList(),
     };
